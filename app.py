@@ -51,8 +51,17 @@ try:
     conn = st.connection("engidb", type="sql")
     with conn.session as s:
         s.execute(text('''CREATE TABLE IF NOT EXISTS ejercicios (id SERIAL PRIMARY KEY, asignatura TEXT, tema TEXT, ejercicio TEXT, dificultad TEXT, cuello_botella TEXT, fecha_registro DATE, fecha_repaso DATE, veces_repasado INTEGER)'''))
-        s.execute(text('''CREATE TABLE IF NOT EXISTS pomodoros (id SERIAL PRIMARY KEY, asignatura TEXT, fecha DATE, minutes_estudiados INTEGER, tipo TEXT)'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS pomodoros (id SERIAL PRIMARY KEY, asignatura TEXT, fecha DATE, minutos_estudiados INTEGER, tipo TEXT)'''))
         s.commit()
+        
+        # Parche automático: Si la tabla se creó antes con "minutes_estudiados", la renombramos a "minutos_estudiados"
+        try:
+            s.execute(text('''ALTER TABLE pomodoros RENAME COLUMN minutes_estudiados TO minutos_estudiados;'''))
+            s.commit()
+        except:
+            # Si da error es porque ya está bien o no existe la columna vieja, así que no pasa nada
+            s.rollback()
+            
     db_ok = True
 except Exception as e:
     db_ok = False
@@ -62,7 +71,6 @@ if 'timer_seconds' not in st.session_state: st.session_state.timer_seconds = 20 
 if 'tiempo_inicial' not in st.session_state: st.session_state.tiempo_inicial = 20 * 60
 if 'timer_running' not in st.session_state: st.session_state.timer_running = False
 if 'modo_actual' not in st.session_state: st.session_state.modo_actual = "Pomodoro"
-# Generador de refresco instantáneo sin romper caché
 if 'refresh_token' not in st.session_state: st.session_state.refresh_token = 1
 
 def calcular_proximo_repaso(fecha_base, dificultad, veces_repasado):
@@ -129,7 +137,6 @@ with tab_pomo:
         st.balloons()
         st.rerun()
 
-    # Guardar tiempos corregido sin reset de recurso brusco
     if st.session_state.modo_actual == "Pomodoro":
         st.divider()
         st.subheader("📝 Registrar sesión de estudio")
@@ -141,10 +148,10 @@ with tab_pomo:
             if db_ok:
                 try:
                     with conn.session as s:
-                        s.execute(text("INSERT INTO pomodoros (asignatura, fecha, minutes_estudiados, tipo) VALUES (:a, :f, :m, :t)"), 
+                        s.execute(text("INSERT INTO pomodoros (asignatura, fecha, minutos_estudiados, tipo) VALUES (:a, :f, :m, :t)"), 
                                   {"a": asig_log, "f": datetime.now().strftime('%Y-%m-%d'), "m": mins_reales, "t": "Pomodoro"})
                         s.commit()
-                    st.session_state.refresh_token = random.randint(1, 99999) # Forzar lectura limpia
+                    st.session_state.refresh_token = random.randint(1, 99999)
                     st.success(f"¡{mins_reales} minutos guardados!")
                     time.sleep(0.5)
                     st.session_state.timer_seconds = 20 * 60
@@ -194,7 +201,7 @@ with tab_reg:
                 st.success(f"Registrado. Próximo repaso: {pr}")
             except: st.error("Error al guardar.")
 
-# --- PESTAÑA GESTIÓN CORREGIDA (Lectura síncrona instantánea a un clic) ---
+# --- PESTAÑA GESTIÓN ---
 with tab_data:
     col_d1, col_d2 = st.columns(2)
     
@@ -203,19 +210,18 @@ with tab_data:
         with col_d1:
             st.subheader("⏱️ Tiempos Guardados")
             try:
-                # El truco del token inyectado en el WHERE evita usar st.reset_resource y no rompe la app
-                df_pomo = conn.query(f"SELECT id, asignatura, minutes_estudiados, fecha FROM pomodoros WHERE {st.session_state.refresh_token}={st.session_state.refresh_token} ORDER BY id DESC")
+                df_pomo = conn.query(f"SELECT id, asignatura, minutos_estudiados, fecha FROM pomodoros WHERE {st.session_state.refresh_token}={st.session_state.refresh_token} ORDER BY id DESC")
                 if df_pomo.empty:
                     st.info("No hay sesiones registradas.")
                 else:
                     for idx, row in df_pomo.iterrows():
                         c_info, c_del = st.columns([4, 1])
-                        c_info.write(f"**{row['asignatura']}**: {row['minutes_estudiados']} min ({row['fecha']})")
+                        c_info.write(f"**{row['asignatura']}**: {row['minutos_estudiados']} min ({row['fecha']})")
                         if c_del.button("🗑️", key=f"del_pomo_{row['id']}"):
                             with conn.session as s:
                                 s.execute(text("DELETE FROM pomodoros WHERE id = :id"), {"id": row['id']})
                                 s.commit()
-                            st.session_state.refresh_token = random.randint(1, 99999) # Forzar cambio inmediato
+                            st.session_state.refresh_token = random.randint(1, 99999)
                             st.toast("Pomodoro eliminado", icon="🗑️")
                             time.sleep(0.3)
                             st.rerun()
@@ -237,7 +243,7 @@ with tab_data:
                             with conn.session as s:
                                 s.execute(text("DELETE FROM ejercicios WHERE id = :id"), {"id": row['id']})
                                 s.commit()
-                            st.session_state.refresh_token = random.randint(1, 99999) # Forzar cambio inmediato
+                            st.session_state.refresh_token = random.randint(1, 99999)
                             st.toast("Ejercicio eliminado", icon="🗑️")
                             time.sleep(0.3)
                             st.rerun()
