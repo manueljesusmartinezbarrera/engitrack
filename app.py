@@ -6,27 +6,27 @@ from sqlalchemy import text
 
 st.set_page_config(page_title="EngiTrack", layout="centered", page_icon="⏱️")
 
-# --- CSS AGRESIVO PARA BOTONES ---
+# --- CSS INTEGRADO PARA CALCAR TU DISEÑO ---
 st.markdown("""
 <style>
     #MainMenu, footer, header {visibility: hidden;}
     .stApp { background-color: #FFFFFF; font-family: 'Segoe UI', Tahoma, sans-serif; }
     .block-container { padding-top: 1rem !important; max-width: 650px; }
 
-    /* Forzar botones superiores sin borde (Estilo Pestaña) */
+    /* Forzar botones superiores estilo pestaña limpia */
     button[kind="secondary"] {
         border: none !important;
         background-color: transparent !important;
         box-shadow: none !important;
-        color: #00A650 !important; /* Verde por defecto */
+        color: #00A650 !important; /* El color verde de tu captura */
         font-size: 18px !important;
-        font-weight: 500 !important;
+        font-weight: bold !important;
     }
     button[kind="secondary"]:hover {
         background-color: #F4F6F8 !important; color: #1C64F2 !important;
     }
 
-    /* Botón INICIAR (Gigante y Azul) */
+    /* Botón INICIAR principal */
     button[kind="primary"] {
         background-color: #1C64F2 !important; color: white !important; 
         border-radius: 50px !important; height: 75px !important;
@@ -54,9 +54,6 @@ if 'timer_seconds' not in st.session_state: st.session_state.timer_seconds = 20 
 if 'tiempo_inicial' not in st.session_state: st.session_state.tiempo_inicial = 20 * 60
 if 'timer_running' not in st.session_state: st.session_state.timer_running = False
 if 'modo_actual' not in st.session_state: st.session_state.modo_actual = "Pomodoro"
-if 'count_pomo' not in st.session_state: st.session_state.count_pomo = 0
-if 'count_desc' not in st.session_state: st.session_state.count_desc = 0
-if 'count_largo' not in st.session_state: st.session_state.count_largo = 0
 
 def calcular_proximo_repaso(fecha_base, dificultad, veces_repasado):
     dias = {"Fácil": 7, "Normal": 3, "Difícil": 1, "No pude hacerlo": 0}[dificultad] * (1.5 ** veces_repasado)
@@ -66,26 +63,26 @@ def calcular_proximo_repaso(fecha_base, dificultad, veces_repasado):
 if not db_ok:
     st.warning("⚠️ Sin conexión a la base de datos. Revisa el menú 'Settings -> Secrets' en Streamlit.")
 
-# --- INTERFAZ ---
+# --- INTERFAZ DE PESTAÑAS ---
 tab_pomo, tab_recall, tab_reg, tab_data = st.tabs(["⏱️ Foco", "🧠 Active Recall", "➕ Registro", "📊 Gestión"])
 
 with tab_pomo:
-    # Navegación Superior
+    # Ajustado para que ponga exactamente 20, 5, 15 como querías
     col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
-        if st.button(f"Pomodoro  {st.session_state.count_pomo}", use_container_width=True):
+        if st.button("Pomodoro 20", use_container_width=True):
             st.session_state.timer_running = False; st.session_state.timer_seconds = 20 * 60
             st.session_state.tiempo_inicial = 20 * 60; st.session_state.modo_actual = "Pomodoro"; st.rerun()
     with col_m2:
-        if st.button(f"Descanso  {st.session_state.count_desc}", use_container_width=True):
+        if st.button("Descanso 5", use_container_width=True):
             st.session_state.timer_running = False; st.session_state.timer_seconds = 5 * 60
             st.session_state.tiempo_inicial = 5 * 60; st.session_state.modo_actual = "Descanso"; st.rerun()
     with col_m3:
-        if st.button(f"Descanso largo  {st.session_state.count_largo}", use_container_width=True):
+        if st.button("Descanso largo 15", use_container_width=True):
             st.session_state.timer_running = False; st.session_state.timer_seconds = 15 * 60
             st.session_state.tiempo_inicial = 15 * 60; st.session_state.modo_actual = "Descanso Largo"; st.rerun()
 
-    # RELOJ CON HTML INLINE (Para forzar el tamaño gigante)
+    # RELOJ CON HTML INLINE GIGANTE
     mins, secs = divmod(st.session_state.timer_seconds, 60)
     reloj_html = f"""
     <div style="display: flex; justify-content: center; margin: 50px 0;">
@@ -98,7 +95,7 @@ with tab_pomo:
     """
     st.markdown(reloj_html, unsafe_allow_html=True)
 
-    # Botón Principal
+    # Botón Principal INICIAR / PAUSAR
     _, btn_col, _ = st.columns([1, 4, 1])
     with btn_col:
         texto_btn = "PAUSAR" if st.session_state.timer_running else "INICIAR"
@@ -106,7 +103,7 @@ with tab_pomo:
             st.session_state.timer_running = not st.session_state.timer_running
             st.rerun()
 
-    # Lógica del motor
+    # Motor del segundero
     if st.session_state.timer_running and st.session_state.timer_seconds > 0:
         time.sleep(1)
         st.session_state.timer_seconds -= 1
@@ -114,30 +111,32 @@ with tab_pomo:
     elif st.session_state.timer_seconds <= 0 and st.session_state.timer_running:
         st.session_state.timer_running = False
         st.balloons()
-        if st.session_state.modo_actual == "Pomodoro": st.session_state.count_pomo += 1
-        elif st.session_state.modo_actual == "Descanso": st.session_state.count_desc += 1
-        elif st.session_state.modo_actual == "Descanso Largo": st.session_state.count_largo += 1
         st.rerun()
 
-    # Guardado a Supabase
-    if st.session_state.modo_actual == "Pomodoro" and (st.session_state.tiempo_inicial - st.session_state.timer_seconds) > 60:
+    # Registro manual de tiempos transcurridos
+    if st.session_state.modo_actual == "Pomodoro":
         st.divider()
+        st.subheader("📝 Registrar sesión de estudio")
         seg_trans = st.session_state.tiempo_inicial - st.session_state.timer_seconds
         mins_reales = max(1, seg_trans // 60)
         
-        asig_log = st.text_input("Asignatura a guardar:", "Circuitos")
-        if st.button(f"💾 Guardar {mins_reales} Minutos", use_container_width=True) and db_ok:
-            try:
-                with conn.session as s:
-                    s.execute(text("INSERT INTO pomodoros (asignatura, fecha, minutos_estudiados, tipo) VALUES (:a, :f, :m, :t)"), 
-                              {"a": asig_log, "f": datetime.now().strftime('%Y-%m-%d'), "m": mins_reales, "t": "Pomodoro"})
-                    s.commit()
-                st.success(f"¡{mins_reales} minutos guardados!")
-            except:
-                st.error("Error al guardar.")
-            st.session_state.timer_running = False; st.session_state.timer_seconds = 20 * 60; st.rerun()
+        asig_log = st.text_input("Asignatura estudiada:", "Circuitos")
+        if st.button(f"💾 Guardar {mins_reales} min en la nube", use_container_width=True):
+            if db_ok:
+                try:
+                    with conn.session as s:
+                        s.execute(text("INSERT INTO pomodoros (asignatura, fecha, minutos_estudiados, tipo) VALUES (:a, :f, :m, :t)"), 
+                                  {"a": asig_log, "f": datetime.now().strftime('%Y-%m-%d'), "m": mins_reales, "t": "Pomodoro"})
+                    st.success(f"¡{mins_reales} minutos guardados en Supabase!")
+                    time.sleep(1)
+                    st.session_state.timer_seconds = 20 * 60
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+            else:
+                st.error("Sin conexión activa con la base de datos.")
 
-# --- DEMÁS PESTAÑAS ---
+# --- OTRAS PESTAÑAS MANTENIDAS ---
 with tab_recall:
     st.header("Repaso de hoy")
     hoy = datetime.now().strftime('%Y-%m-%d')
@@ -155,7 +154,7 @@ with tab_recall:
                                 nf = calcular_proximo_repaso(hoy, dif if dif != "No pude" else "No pude hacerlo", row['veces_repasado']+1)
                                 with conn.session as s:
                                     s.execute(text("UPDATE ejercicios SET fecha_repaso=:nf, veces_repasado=:vr WHERE id=:id"), {"nf": nf, "vr": row['veces_repasado']+1, "id": row['id']})
-                                    s.commit(); st.rerun()
+                                st.rerun()
         except: pass
 
 with tab_reg:
@@ -171,9 +170,8 @@ with tab_reg:
                 with conn.session as s:
                     s.execute(text("INSERT INTO ejercicios (asignatura, tema, ejercicio, dificultad, cuello_botella, fecha_registro, fecha_repaso, veces_repasado) VALUES (:a, :t, :e, :d, :c, :fr, :pr, :vr)"),
                               {"a": asig, "t": tema, "e": ejer, "d": dif, "c": botella, "fr": fr, "pr": pr, "vr": 0})
-                    s.commit()
                 st.success(f"Registrado. Próximo repaso: {pr}")
-            except: st.error("Error al guardar en la nube.")
+            except: st.error("Error al guardar.")
 
 with tab_data:
     col_d1, col_d2 = st.columns(2)
