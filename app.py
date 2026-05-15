@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 st.set_page_config(page_title="EngiTrack", layout="centered", page_icon="⏱️")
 
-# --- CSS INTEGRADO CORREGIDO ---
+# --- CSS INTEGRADO ---
 st.markdown("""
 <style>
     #MainMenu, footer, header {visibility: hidden;}
@@ -35,13 +35,19 @@ st.markdown("""
         box-shadow: 0 10px 25px rgba(28, 100, 242, 0.3) !important; letter-spacing: 2px !important;
     }
     button[kind="primary"]:hover { background-color: #1A56D1 !important; transform: translateY(-2px); }
+    
+    /* Estilo compacto para los botones de eliminar fila */
+    div.stButton > button[key^="del_"] {
+        padding: 2px 10px !important;
+        color: #EF4444 !important;
+        font-size: 14px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- CONEXIÓN A SUPABASE Y CREACIÓN DE TABLAS ---
 try:
     conn = st.connection("engidb", type="sql")
-    # Forzamos la creación de las tablas si no existen antes de hacer cualquier consulta
     with conn.session as s:
         s.execute(text('''CREATE TABLE IF NOT EXISTS ejercicios (id SERIAL PRIMARY KEY, asignatura TEXT, tema TEXT, ejercicio TEXT, dificultad TEXT, cuello_botella TEXT, fecha_registro DATE, fecha_repaso DATE, veces_repasado INTEGER)'''))
         s.execute(text('''CREATE TABLE IF NOT EXISTS pomodoros (id SERIAL PRIMARY KEY, asignatura TEXT, fecha DATE, minutos_estudiados INTEGER, tipo TEXT)'''))
@@ -68,7 +74,6 @@ if not db_ok:
 tab_pomo, tab_recall, tab_reg, tab_data = st.tabs(["⏱️ Foco", "🧠 Active Recall", "➕ Registro", "📊 Gestión"])
 
 with tab_pomo:
-    # Botones superiores fijos
     col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
         if st.button("Pomodoro 20", key="pomo_20_btn", use_container_width=True):
@@ -92,7 +97,7 @@ with tab_pomo:
             st.session_state.modo_actual = "Descanso Largo"
             st.rerun()
 
-    # RELOJ CON HTML INLINE GIGANTE
+    # RELOJ
     mins, secs = divmod(st.session_state.timer_seconds, 60)
     reloj_html = f"""
     <div style="display: flex; justify-content: center; margin: 50px 0;">
@@ -105,7 +110,6 @@ with tab_pomo:
     """
     st.markdown(reloj_html, unsafe_allow_html=True)
 
-    # Botón Principal INICIAR / PAUSAR
     _, btn_col, _ = st.columns([1, 4, 1])
     with btn_col:
         texto_btn = "PAUSAR" if st.session_state.timer_running else "INICIAR"
@@ -113,7 +117,6 @@ with tab_pomo:
             st.session_state.timer_running = not st.session_state.timer_running
             st.rerun()
 
-    # Motor del segundero
     if st.session_state.timer_running and st.session_state.timer_seconds > 0:
         time.sleep(1)
         st.session_state.timer_seconds -= 1
@@ -123,7 +126,6 @@ with tab_pomo:
         st.balloons()
         st.rerun()
 
-    # Formulario para Guardar Tiempos
     if st.session_state.modo_actual == "Pomodoro":
         st.divider()
         st.subheader("📝 Registrar sesión de estudio")
@@ -138,16 +140,14 @@ with tab_pomo:
                         s.execute(text("INSERT INTO pomodoros (asignatura, fecha, minutos_estudiados, tipo) VALUES (:a, :f, :m, :t)"), 
                                   {"a": asig_log, "f": datetime.now().strftime('%Y-%m-%d'), "m": mins_reales, "t": "Pomodoro"})
                         s.commit()
-                    st.success(f"¡{mins_reales} minutos guardados en Supabase!")
+                    st.success(f"¡{mins_reales} minutos guardados!")
                     time.sleep(1)
                     st.session_state.timer_seconds = 20 * 60
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Error al guardar: {ex}")
-            else:
-                st.error("Sin conexión activa con la base de datos.")
 
-# --- OTRAS PESTAÑAS MANTENIDAS ---
+# --- ACTIVE RECALL ---
 with tab_recall:
     st.header("Repaso de hoy")
     hoy = datetime.now().strftime('%Y-%m-%d')
@@ -169,6 +169,7 @@ with tab_recall:
                                 st.rerun()
         except: pass
 
+# --- REGISTRO ---
 with tab_reg:
     st.header("Nuevo Problema")
     with st.form("reg"):
@@ -186,14 +187,49 @@ with tab_reg:
                 st.success(f"Registrado. Próximo repaso: {pr}")
             except: st.error("Error al guardar.")
 
+# --- PESTAÑA GESTIÓN MODIFICADA (ELIMINACIÓN HABILITADA) ---
 with tab_data:
     col_d1, col_d2 = st.columns(2)
+    
     if db_ok:
+        # Columna 1: Pomodoros / Tiempos guardados
         with col_d1:
-            st.subheader("Tiempos Guardados")
-            try: st.dataframe(conn.query("SELECT id, asignatura, minutos_estudiados FROM pomodoros"), use_container_width=True)
-            except: pass
+            st.subheader("⏱️ Tiempos Guardados")
+            try:
+                df_pomo = conn.query("SELECT id, asignatura, minutos_estudiados, fecha FROM pomodoros ORDER BY id DESC")
+                if df_pomo.empty:
+                    st.info("No hay sesiones registradas.")
+                else:
+                    for idx, row in df_pomo.iterrows():
+                        c_info, c_del = st.columns([4, 1])
+                        c_info.write(f"**{row['asignatura']}**: {row['minutos_estudiados']} min ({row['fecha']})")
+                        if c_del.button("🗑️", key=f"del_pomo_{row['id']}"):
+                            with conn.session as s:
+                                s.execute(text("DELETE FROM pomodoros WHERE id = :id"), {"id": row['id']})
+                                s.commit()
+                            st.toast("Pomodoro eliminado", icon="🗑️")
+                            time.sleep(0.5)
+                            st.rerun()
+            except Exception as e:
+                st.error("Error al cargar pomodoros.")
+
+        # Columna 2: Ejercicios / Problemas registrados
         with col_d2:
-            st.subheader("Ejercicios")
-            try: st.dataframe(conn.query("SELECT id, asignatura, ejercicio FROM ejercicios"), use_container_width=True)
-            except: pass
+            st.subheader("📚 Ejercicios")
+            try:
+                df_ejer = conn.query("SELECT id, asignatura, ejercicio, tema FROM ejercicios ORDER BY id DESC")
+                if df_ejer.empty:
+                    st.info("No hay ejercicios registrados.")
+                else:
+                    for idx, row in df_ejer.iterrows():
+                        c_info, c_del = st.columns([4, 1])
+                        c_info.write(f"**{row['asignatura']}**: {row['ejercicio']} (*{row['tema']}*)")
+                        if c_del.button("🗑️", key=f"del_ejer_{row['id']}"):
+                            with conn.session as s:
+                                s.execute(text("DELETE FROM ejercicios WHERE id = :id"), {"id": row['id']})
+                                s.commit()
+                            st.toast("Ejercicio eliminado", icon="🗑️")
+                            time.sleep(0.5)
+                            st.rerun()
+            except Exception as e:
+                st.error("Error al cargar ejercicios.")
