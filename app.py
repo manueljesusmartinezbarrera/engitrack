@@ -140,6 +140,8 @@ with tab_pomo:
                         s.execute(text("INSERT INTO pomodoros (asignatura, fecha, minutos_estudiados, tipo) VALUES (:a, :f, :m, :t)"), 
                                   {"a": asig_log, "f": datetime.now().strftime('%Y-%m-%d'), "m": mins_reales, "t": "Pomodoro"})
                         s.commit()
+                    # Forzamos borrado de caché al añadir un registro nuevo
+                    st.reset_resource("engidb")
                     st.success(f"¡{mins_reales} minutos guardados!")
                     time.sleep(1)
                     st.session_state.timer_seconds = 20 * 60
@@ -166,6 +168,7 @@ with tab_recall:
                                 with conn.session as s:
                                     s.execute(text("UPDATE ejercicios SET fecha_repaso=:nf, veces_repasado=:vr WHERE id=:id"), {"nf": nf, "vr": row['veces_repasado']+1, "id": row['id']})
                                     s.commit()
+                                st.reset_resource("engidb")
                                 st.rerun()
         except: pass
 
@@ -184,10 +187,11 @@ with tab_reg:
                     s.execute(text("INSERT INTO ejercicios (asignatura, tema, ejercicio, dificultad, cuello_botella, fecha_registro, fecha_repaso, veces_repasado) VALUES (:a, :t, :e, :d, :c, :fr, :pr, :vr)"),
                               {"a": asig, "t": tema, "e": ejer, "d": dif, "c": botella, "fr": fr, "pr": pr, "vr": 0})
                     s.commit()
+                st.reset_resource("engidb")
                 st.success(f"Registrado. Próximo repaso: {pr}")
             except: st.error("Error al guardar.")
 
-# --- PESTAÑA GESTIÓN MODIFICADA (ELIMINACIÓN HABILITADA) ---
+# --- PESTAÑA GESTIÓN MODIFICADA CON BORRADO DE CACHÉ EN VIVO ---
 with tab_data:
     col_d1, col_d2 = st.columns(2)
     
@@ -196,7 +200,8 @@ with tab_data:
         with col_d1:
             st.subheader("⏱️ Tiempos Guardados")
             try:
-                df_pomo = conn.query("SELECT id, asignatura, minutos_estudiados, fecha FROM pomodoros ORDER BY id DESC")
+                # Usamos ttl=0 para asegurar que esta pestaña lea SIEMPRE de la base de datos real
+                df_pomo = conn.query("SELECT id, asignatura, minutos_estudiados, fecha FROM pomodoros ORDER BY id DESC", ttl=0)
                 if df_pomo.empty:
                     st.info("No hay sesiones registradas.")
                 else:
@@ -207,8 +212,10 @@ with tab_data:
                             with conn.session as s:
                                 s.execute(text("DELETE FROM pomodoros WHERE id = :id"), {"id": row['id']})
                                 s.commit()
+                            # LIMPIEZA TOTAL DE CACHÉ TRAS ELIMINAR
+                            st.reset_resource("engidb")
                             st.toast("Pomodoro eliminado", icon="🗑️")
-                            time.sleep(0.5)
+                            time.sleep(0.3)
                             st.rerun()
             except Exception as e:
                 st.error("Error al cargar pomodoros.")
@@ -217,7 +224,8 @@ with tab_data:
         with col_d2:
             st.subheader("📚 Ejercicios")
             try:
-                df_ejer = conn.query("SELECT id, asignatura, ejercicio, tema FROM ejercicios ORDER BY id DESC")
+                # Usamos ttl=0 para forzar lectura limpia sin memoria de datos borrados
+                df_ejer = conn.query("SELECT id, asignatura, ejercicio, tema FROM ejercicios ORDER BY id DESC", ttl=0)
                 if df_ejer.empty:
                     st.info("No hay ejercicios registrados.")
                 else:
@@ -228,8 +236,10 @@ with tab_data:
                             with conn.session as s:
                                 s.execute(text("DELETE FROM ejercicios WHERE id = :id"), {"id": row['id']})
                                 s.commit()
+                            # LIMPIEZA TOTAL DE CACHÉ TRAS ELIMINAR
+                            st.reset_resource("engidb")
                             st.toast("Ejercicio eliminado", icon="🗑️")
-                            time.sleep(0.5)
+                            time.sleep(0.3)
                             st.rerun()
             except Exception as e:
                 st.error("Error al cargar ejercicios.")
